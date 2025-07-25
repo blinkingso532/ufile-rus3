@@ -5,10 +5,10 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::Stream;
 use std::fs::File as StdFile;
 use tokio::io::{AsyncRead, BufReader};
 use tokio::{fs::File, io::ReadBuf};
+use tokio_stream::Stream;
 
 /// struct to wrap file reader with progress
 pub(crate) struct ProgressStream {

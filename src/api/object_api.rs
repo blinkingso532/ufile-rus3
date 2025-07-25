@@ -193,10 +193,12 @@ impl CombinatedMultipartPutApi {
             }));
         }
         // we wait here for all tasks to be finished.
-        let results = futures::future::join_all(tasks).await;
+        let mut results = vec![];
+        for task in tasks {
+            results.push(task.await.unwrap()?);
+        }
         let mut parts_state = vec![];
-        for result in results {
-            let state = result??;
+        for state in results {
             tracing::debug!("Part {} uploaded successfully", state.part_number);
             parts_state.push(state);
         }

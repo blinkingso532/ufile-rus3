@@ -1260,7 +1260,6 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
- "futures",
  "hex",
  "hmac",
  "md5",
