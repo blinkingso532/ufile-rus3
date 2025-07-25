@@ -5,7 +5,7 @@ edition = "2024"
 exclude = ["*.zip", "*.txt", "*.dmg", "tests/*"]
 description = "UFile Rust SDK"
 license = "MIT"
-repository = "https://github.com/ufile/ufile-rus3"
+repository = "https://github.com/blinkingso532/ufile-rus3.git"
 
 [dependencies]
 anyhow = "1.0.98"
