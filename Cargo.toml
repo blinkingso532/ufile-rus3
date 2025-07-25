@@ -6,6 +6,7 @@ exclude = ["*.zip", "*.txt", "*.dmg", "tests/*"]
 description = "UFile Rust SDK"
 license = "MIT"
 repository = "https://github.com/blinkingso532/ufile-rus3"
+authors = ["blinkingso532", "714232542@qq.com"]
 
 [dependencies]
 anyhow = "1.0.98"
