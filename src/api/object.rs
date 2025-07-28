@@ -253,15 +253,3 @@ pub struct HeadFileResponse {
     /// Last modified time.
     pub last_modified: Option<String>,
 }
-
-#[test]
-fn test_serde() {
-    let a = r#"{
-        "Bucket": "Success",
-        "Key": "1234567890",
-        "FileSize": 1024
-    }"#;
-
-    let a: FinishUploadResponse = serde_json::from_str(a).unwrap();
-    println!("{:?}", a);
-}

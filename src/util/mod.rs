@@ -98,7 +98,7 @@ impl ETag {
 
 impl Display for ETag {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", serde_json::to_string(self).unwrap())
+        write!(f, "{:?}", self)
     }
 }
 
