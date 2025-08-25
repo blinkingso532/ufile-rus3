@@ -86,11 +86,6 @@ impl HttpClientBuilder {
         self
     }
 
-    pub fn enable_http2(mut self) -> Self {
-        self.builder = self.builder.http2_prior_knowledge();
-        self
-    }
-
     pub fn build(self) -> Result<HttpClient, Error> {
         Ok(HttpClient {
             inner: self.builder.build()?,

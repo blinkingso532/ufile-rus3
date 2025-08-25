@@ -11,7 +11,7 @@ use tokio::{
     sync::{self, Semaphore},
 };
 
-use crate::constant;
+use crate::constant::{self, DEFAULT_CONCURRENCY};
 use crate::{
     api::{
         ApiOperation, GenPrivateUrlConfig, GenPrivateUrlOperation, ObjectConfig, Sealed,
@@ -117,7 +117,7 @@ impl ApiOperation for DownloadFileOperation {
         let concurrency = if let Some(concurrency) = config.concurrency {
             concurrency as usize
         } else {
-            num_cpus::get() * 2
+            DEFAULT_CONCURRENCY
         };
         let semphore = Arc::new(Semaphore::new(concurrency));
         let mut join_handles = vec![];
