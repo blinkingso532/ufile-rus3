@@ -1,5 +1,5 @@
 //! This module provides validator functions for api field's validation checking.
-use std::{borrow::Cow, fs::File};
+use std::{borrow::Cow, fs::File as StdFile, path::PathBuf};
 
 use bytes::Bytes;
 use mediatype::MediaType;
@@ -23,7 +23,8 @@ pub(crate) fn is_bucket_name_not_empty(bucket_name: String) -> Result<String, &'
 }
 
 /// Check file is valid.
-pub(crate) fn is_file_valid(file: Option<File>) -> Result<Option<File>, &'static str> {
+#[allow(unused)]
+pub(crate) fn is_file_valid(file: Option<StdFile>) -> Result<Option<StdFile>, &'static str> {
     match file {
         None => return Err("File must not be null."),
         Some(ref file) => match file.metadata() {
@@ -44,6 +45,35 @@ pub(crate) fn is_file_valid(file: Option<File>) -> Result<Option<File>, &'static
 
     // check file size.
     Ok(file)
+}
+
+/// Check file is valid.
+pub(crate) fn is_path_buf_valid(path_buf: PathBuf) -> Result<PathBuf, &'static str> {
+    let file = StdFile::open(path_buf.as_path()).map_err(|e| {
+        tracing::error!(
+            "Failed to open file with path: {:?} for: {:?}",
+            path_buf.as_path(),
+            e
+        );
+        "File open error"
+    })?;
+    match file.metadata() {
+        Ok(meta) => {
+            std::mem::drop(file);
+            if !meta.is_file() {
+                return Err("file must be a regular file");
+            }
+            if meta.len() > 512 << 20 {
+                return Err("file size must less than 512MB");
+            }
+        }
+        Err(e) => {
+            tracing::error!("get file metadata error: {:?}", e);
+            return Err("get file metadata error");
+        }
+    }
+    // check file size.
+    Ok(path_buf)
 }
 
 pub(crate) fn is_mime_type_valid(mime_type: String) -> Result<String, Cow<'static, str>> {

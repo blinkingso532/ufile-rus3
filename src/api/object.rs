@@ -8,7 +8,7 @@ use builder_pattern::Builder;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
-use crate::api::{HmacSha1Signer, Signer};
+use crate::auth::{HmacSha1Signer, Signer};
 
 /// U-cloud protocol
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
@@ -72,28 +72,36 @@ pub struct ObjectConfig {
     /// default http request endpoint.
     #[into]
     #[default("https://api.ucloud.cn".into())]
-    pub endpoint: String,
+    endpoint: String,
     /// private key
     #[into]
     pub private_key: String,
     /// public key
+    #[into]
     pub public_key: String,
     /// 仓库地区 (eg: 'cn-bj')
     #[serde(rename = "Region")]
-    pub region: String,
+    #[public]
+    #[into]
+    region: String,
 
     /// 代理后缀 (eg: 'ufileos.com')
     #[serde(rename = "ProxySuffix")]
-    pub proxy_suffix: Option<String>,
+    #[default(None)]
+    #[public]
+    proxy_suffix: Option<String>,
 
     /// 自定义域名 (eg: 'api.ucloud.cn')：若配置了非空自定义域名，则使用自定义域名，不会使用 region + proxySuffix 拼接
     #[serde(rename = "CustomHost")]
-    pub custom_host: Option<String>,
+    #[default(None)]
+    #[public]
+    custom_host: Option<String>,
 
     /// protocol
     #[serde(skip)]
     #[default(UfileProtocol::Https)]
-    pub protocol: UfileProtocol,
+    #[public]
+    protocol: UfileProtocol,
 }
 
 impl Default for ObjectConfig {
@@ -216,7 +224,7 @@ pub struct InitMultipartState {
     pub mime_type: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct MultipartUploadState {
     #[serde(skip_deserializing)]

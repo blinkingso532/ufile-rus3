@@ -1,6 +1,6 @@
 //! This module used to finish the multipart upload task.
 
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{collections::HashMap, fmt::Display};
 
 use anyhow::Error;
 use builder_pattern::Builder;
@@ -10,19 +10,21 @@ use reqwest::{
     header::{HeaderMap, HeaderName},
 };
 
-use crate::api::{
-    AuthorizationService,
-    client::ApiClient,
-    object::{
-        BaseResponse, FinishUploadResponse, InitMultipartState, MultipartUploadState, ObjectConfig,
-        ObjectOptAuthParam,
+use crate::{
+    api::{
+        ApiOperation,
+        object::{
+            BaseResponse, FinishUploadResponse, InitMultipartState, MultipartUploadState,
+            ObjectOptAuthParam,
+        },
     },
-    traits::ApiExecutor,
+    define_operation_struct,
 };
 
 /// UNCHANGED（默认值）:保持初始化时设置的用户自定义元数据不变。
 ///
 /// REPLACE：忽略初始化分片时设置的用户自定义元数据，直接采用Finish请求中指定的元数据。
+#[allow(unused)]
 #[derive(Debug, Clone, Copy)]
 pub enum MetadataDirective {
     Unchanged,
@@ -38,8 +40,8 @@ impl Display for MetadataDirective {
     }
 }
 
-#[derive(Builder)]
-pub struct FinishMultipartFileApi {
+#[derive(Builder, Clone)]
+pub struct MultipartFinishConfig {
     /// State of multipart upload task.
     pub state: InitMultipartState,
 
@@ -52,6 +54,7 @@ pub struct FinishMultipartFileApi {
     /// UNCHANGED（默认值）:保持初始化时设置的用户自定义元数据不变。
     ///
     /// REPLACE：忽略初始化分片时设置的用户自定义元数据，直接采用Finish请求中指定的元数据。
+    #[default(None)]
     pub metadata_directive: Option<MetadataDirective>,
 
     /// User custom headers metadata.
@@ -63,59 +66,63 @@ pub struct FinishMultipartFileApi {
     pub security_token: Option<String>,
 }
 
+define_operation_struct!(MultipartFinishOperation, MultipartFinishConfig);
+
 #[async_trait::async_trait]
-impl ApiExecutor<FinishUploadResponse> for FinishMultipartFileApi {
-    async fn execute(
-        &mut self,
-        object_config: ObjectConfig,
-        api_client: Arc<ApiClient>,
-        auth_service: AuthorizationService,
-    ) -> Result<FinishUploadResponse, Error> {
-        let mime_type = self
+impl ApiOperation for MultipartFinishOperation {
+    type Response = FinishUploadResponse;
+    type Error = Error;
+
+    async fn execute(&self) -> Result<Self::Response, Self::Error> {
+        let mut config = self.config.clone();
+        let mime_type = config
             .state
             .mime_type
             .clone()
-            .take()
             .ok_or(Error::msg("mime type is unset."))?;
         // let mime_type = "text/plain".to_string();
         let date = Local::now().format("%Y%m%d%H%M%S").to_string();
         let auth_object = ObjectOptAuthParam::new()
             .method(Method::POST)
-            .bucket(self.state.bucket.clone())
-            .key_name(self.state.key_name.clone())
+            .bucket(config.state.bucket.clone())
+            .key_name(config.state.key_name.clone())
             .content_type(Some(mime_type.clone()))
             .date(Some(date.clone()))
             .build();
-        let authorization = auth_service.authorization(&auth_object, object_config.clone())?;
+        let authorization = self
+            .auth_service
+            .authorization(&auth_object, self.object_config.clone())?;
         let mut headers = HeaderMap::new();
         headers.insert("Content-Type", mime_type.parse().unwrap());
         headers.insert("Accept", "*/*".parse().unwrap());
         headers.insert("Date", date.parse().unwrap());
         headers.insert("Authorization", authorization.parse().unwrap());
-        if let Some(ref security_token) = self.security_token
+        if let Some(ref security_token) = config.security_token
             && !security_token.is_empty()
         {
             headers.insert("SecurityToken", security_token.parse().unwrap());
         }
-        if let Some(ref directive) = self.metadata_directive {
+        if let Some(ref directive) = config.metadata_directive {
             headers.insert(
                 "X-Ufile-Metadata-Directive",
                 directive.to_string().parse().unwrap(),
             );
         }
         // We must add metadata to headers if metadata is not empty.
-        let url = object_config
-            .generate_final_host(self.state.bucket.as_str(), self.state.key_name.as_str());
+        let url = self
+            .object_config
+            .generate_final_host(config.state.bucket.as_str(), config.state.key_name.as_str());
         let url = format!(
             "{}?uploadId={}&newKey={}",
             url,
-            self.state.upload_id,
-            self.new_object.as_ref().unwrap_or(&String::new())
+            config.state.upload_id,
+            config.new_object.as_ref().unwrap_or(&String::new())
         );
         // calc body.
-        self.part_states
+        config
+            .part_states
             .sort_by(|a, b| a.part_number.cmp(&b.part_number));
-        let body_buffer = self
+        let body_buffer = config
             .part_states
             .iter()
             .map(|item| item.etag.clone())
@@ -126,15 +133,16 @@ impl ApiExecutor<FinishUploadResponse> for FinishMultipartFileApi {
             "Content-Length",
             body_buffer.len().to_string().parse().unwrap(),
         );
-        if let Some(ref metadata) = self.metadata {
+        if let Some(ref metadata) = config.metadata {
             for (k, v) in metadata {
                 headers.insert(
-                    format!("X-Ufile-Meta-{}", k).parse::<HeaderName>().unwrap(),
+                    format!("X-Ufile-Meta-{k}").parse::<HeaderName>().unwrap(),
                     v.parse().unwrap(),
                 );
             }
         }
-        let resp = api_client
+        let resp = self
+            .client
             .get_client()
             .post(url)
             .headers(headers)

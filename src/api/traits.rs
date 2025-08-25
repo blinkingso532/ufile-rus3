@@ -1,16 +1,13 @@
-use std::sync::Arc;
-
-use anyhow::Error;
-
-use crate::api::{AuthorizationService, client::ApiClient, object::ObjectConfig};
+use crate::api::traits::sealed::Sealed;
 
 #[async_trait::async_trait]
-pub trait ApiExecutor<R> {
-    /// Method to execute the api request.
-    async fn execute(
-        &mut self,
-        object_config: ObjectConfig,
-        api_client: Arc<ApiClient>,
-        auth_service: AuthorizationService,
-    ) -> Result<R, Error>;
+pub trait ApiOperation: Sealed {
+    type Response;
+    type Error;
+
+    async fn execute(&self) -> Result<Self::Response, Self::Error>;
+}
+
+pub mod sealed {
+    pub trait Sealed {}
 }

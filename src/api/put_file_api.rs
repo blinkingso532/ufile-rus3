@@ -8,9 +8,7 @@ use tokio::{fs::File as TokioFile, io};
 use crate::api::{
     object::{ObjectConfig, PutObjectResultResponse},
     traits::ApiExecutor,
-    validator::{
-        is_bucket_name_not_empty, is_file_valid, is_key_name_not_empty, is_mime_type_valid,
-    },
+    validator::*,
 };
 
 use anyhow::Error;

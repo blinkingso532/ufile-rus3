@@ -11,20 +11,18 @@ use tokio::{
     sync::{self, Semaphore},
 };
 
+use crate::constant;
 use crate::{
     api::{
-        AuthorizationService,
-        client::ApiClient,
-        gen_private_url_api::GenPrivateUrlApi,
-        object::{HeadFileResponse, ObjectConfig},
-        traits::ApiExecutor,
+        ApiOperation, GenPrivateUrlConfig, GenPrivateUrlOperation, ObjectConfig, Sealed,
+        object::HeadFileResponse,
         validator::{is_bucket_name_not_empty, is_key_name_not_empty},
     },
-    constant,
+    client::HttpClient,
 };
 
 #[derive(Builder)]
-pub struct DownloadFileApi {
+pub struct DownloadFileConfig {
     /// Which bucket the file is in, must not be empty.
     #[validator(is_bucket_name_not_empty)]
     #[into]
@@ -73,28 +71,40 @@ pub struct DownloadFileApi {
     pub security_token: Option<String>,
 }
 
-/// Impl `ApiExecutor` for `DownloadFileApi`.
-///
-/// # Arguments
-///
-/// * `object_config` - The object config.
-/// * `api_client` - The api client.
-/// * `auth_service` - The auth service.
-///
-/// # Returns
-///
-/// * `Result<(), Error>` - The result of the download file api.
-impl DownloadFileApi {
-    pub async fn execute(
-        &mut self,
+pub struct DownloadFileOperation {
+    config: DownloadFileConfig,
+    client: HttpClient,
+    object_config: ObjectConfig,
+}
+
+#[allow(unused)]
+impl DownloadFileOperation {
+    pub fn new(
+        config: DownloadFileConfig,
         object_config: ObjectConfig,
-        api_client: Arc<ApiClient>,
-        auth_service: AuthorizationService,
-    ) -> Result<(), Error> {
-        let total_file_size = self.head.content_length;
+        client: HttpClient,
+    ) -> Self {
+        Self {
+            config,
+            object_config,
+            client,
+        }
+    }
+}
+
+impl Sealed for DownloadFileOperation {}
+
+#[async_trait::async_trait]
+impl ApiOperation for DownloadFileOperation {
+    type Response = ();
+    type Error = Error;
+
+    async fn execute(&self) -> Result<Self::Response, Self::Error> {
+        let config = &self.config;
+        let total_file_size = config.head.content_length;
         // Calculate the chunks count will be downloaded.
         let chunk_count = (total_file_size + constant::MULTIPART_SIZE as u64 - 1)
-            / constant::MULTIPART_SIZE as u64;
+            .div_ceil(constant::MULTIPART_SIZE as u64);
         // Separate file into chunks, considering the last chunk might be smaller than MULTIPART_SIZE
         let ranges = (0..chunk_count)
             .map(|i| {
@@ -104,7 +114,7 @@ impl DownloadFileApi {
             })
             .collect::<Vec<_>>();
         // Download the file chunks concurrently and write to the dest file.
-        let concurrency = if let Some(concurrency) = self.concurrency {
+        let concurrency = if let Some(concurrency) = config.concurrency {
             concurrency as usize
         } else {
             num_cpus::get() * 2
@@ -112,24 +122,25 @@ impl DownloadFileApi {
         let semphore = Arc::new(Semaphore::new(concurrency));
         let mut join_handles = vec![];
         // create handles with chunk count iterator.
-        let download_url = GenPrivateUrlApi::new()
-            .key_name(self.key_name.clone())
-            .bucket_name(self.bucket_name.clone())
-            .expires(self.expires)
-            .iop_cmd(self.iop_cmd.clone())
-            .build()
-            .execute(object_config.clone(), Arc::clone(&api_client), auth_service)
-            .await?;
+        let private_url_operation_config = GenPrivateUrlConfig::new()
+            .key_name(config.key_name.clone())
+            .bucket_name(config.bucket_name.clone())
+            .expires(config.expires)
+            .iop_cmd(config.iop_cmd.clone())
+            .build();
+        let gen_private_url_operation =
+            GenPrivateUrlOperation::new(private_url_operation_config, self.object_config.clone());
+        let download_url = gen_private_url_operation.execute().await?;
 
         // Determie destination path
-        let dest_path = if let Some(dest) = &self.dest {
+        let dest_path = if let Some(ref dest) = config.dest {
             dest.clone()
         } else {
-            PathBuf::from(&self.key_name)
+            PathBuf::from(&config.key_name)
         };
 
         // Check if file exists and handle overwrite.
-        if fs::try_exists(&dest_path).await? && !self.overwrite {
+        if fs::try_exists(&dest_path).await? && !config.overwrite {
             return Err(anyhow!(
                 "File {:?} already exists. Set overwrite=true to replace it.",
                 dest_path
@@ -142,9 +153,9 @@ impl DownloadFileApi {
         for range in ranges {
             let semphore = Arc::clone(&semphore);
             let url = download_url.clone();
-            let api_client = Arc::clone(&api_client);
-            let security_token = self.security_token.clone();
+            let security_token = config.security_token.clone();
             let file = Arc::clone(&file);
+            let client = self.client.clone();
 
             let join_handle = tokio::spawn(async move {
                 // Acquire a semaphore permit before download the chunk.
@@ -163,7 +174,7 @@ impl DownloadFileApi {
                 {
                     headers.insert("SecurityToken", security_token.parse().unwrap());
                 }
-                let response = api_client
+                let response = client
                     .get_client()
                     .get(url)
                     .headers(headers)

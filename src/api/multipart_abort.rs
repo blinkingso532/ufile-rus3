@@ -1,7 +1,7 @@
 //! As you can init a task to upload a file, and then you can abort the task if you want.
 //! So this module is used to create a task to abort the multipart upload task.
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use anyhow::Error;
 use builder_pattern::Builder;
@@ -11,16 +11,17 @@ use reqwest::{
     header::{HeaderMap, HeaderName},
 };
 
-use crate::api::{
-    AuthorizationService,
-    client::ApiClient,
-    object::{BaseResponse, InitMultipartState, ObjectConfig, ObjectOptAuthParam},
-    traits::ApiExecutor,
+use crate::{
+    api::{
+        ApiOperation,
+        object::{BaseResponse, InitMultipartState, ObjectOptAuthParam},
+    },
+    define_operation_struct,
 };
 
 /// This api used to abort the multipart upload task.
 #[derive(Builder)]
-pub struct AbortMultipartUploadApi {
+pub struct MultipartAbortConfig {
     /// State of multipart upload task.
     pub state: InitMultipartState,
 
@@ -33,53 +34,57 @@ pub struct AbortMultipartUploadApi {
     pub security_token: Option<String>,
 }
 
+define_operation_struct!(MultipartAbortOperation, MultipartAbortConfig);
+
 #[async_trait::async_trait]
-impl ApiExecutor<()> for AbortMultipartUploadApi {
-    async fn execute(
-        &mut self,
-        object_config: ObjectConfig,
-        api_client: Arc<ApiClient>,
-        auth_service: AuthorizationService,
-    ) -> Result<(), Error> {
-        let mime_type = self
+impl ApiOperation for MultipartAbortOperation {
+    type Response = ();
+    type Error = Error;
+
+    async fn execute(&self) -> Result<Self::Response, Self::Error> {
+        let config = &self.config;
+        let mime_type = config
             .state
             .mime_type
             .clone()
-            .take()
             .ok_or(Error::msg("mime type is unset."))?;
         // let mime_type = "text/plain".to_string();
         let date = Local::now().format("%Y%m%d%H%M%S").to_string();
         let auth_object = ObjectOptAuthParam::new()
             .method(Method::DELETE)
-            .bucket(self.state.bucket.clone())
-            .key_name(self.state.key_name.clone())
+            .bucket(config.state.bucket.clone())
+            .key_name(config.state.key_name.clone())
             .content_type(Some(mime_type.clone()))
             .date(Some(date.clone()))
             .build();
-        let authorization = auth_service.authorization(&auth_object, object_config.clone())?;
+        let authorization = self
+            .auth_service
+            .authorization(&auth_object, self.object_config.clone())?;
         let mut headers = HeaderMap::new();
         headers.insert("Content-Type", mime_type.parse().unwrap());
         headers.insert("Accept", "*/*".parse().unwrap());
         headers.insert("Date", date.parse().unwrap());
         headers.insert("Authorization", authorization.parse().unwrap());
-        if let Some(ref security_token) = self.security_token
+        if let Some(ref security_token) = config.security_token
             && !security_token.is_empty()
         {
             headers.insert("SecurityToken", security_token.parse().unwrap());
         }
         // We must add metadata to headers if metadata is not empty.
-        let url = object_config
-            .generate_final_host(self.state.bucket.as_str(), self.state.key_name.as_str());
-        let url = format!("{}?uploadId={}", url, self.state.upload_id,);
-        if let Some(ref metadata) = self.metadata {
+        let url = self
+            .object_config
+            .generate_final_host(config.state.bucket.as_str(), config.state.key_name.as_str());
+        let url = format!("{}?uploadId={}", url, config.state.upload_id,);
+        if let Some(ref metadata) = config.metadata {
             for (k, v) in metadata {
                 headers.insert(
-                    format!("X-Ufile-Meta-{}", k).parse::<HeaderName>().unwrap(),
+                    format!("X-Ufile-Meta-{k}").parse::<HeaderName>().unwrap(),
                     v.parse().unwrap(),
                 );
             }
         }
-        let resp = api_client
+        let resp = self
+            .client
             .get_client()
             .delete(url)
             .headers(headers)

@@ -1,17 +1,12 @@
 //! This module contains the API for generating private URL.
 
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Error;
 use builder_pattern::Builder;
 use reqwest::Method;
 
-use crate::api::{
-    AuthorizationService, client::ApiClient, object::ObjectConfig, traits::ApiExecutor,
-};
+use crate::api::{ApiOperation, ObjectConfig, Sealed};
 
 /// This struct describe the request of generating private URL.
 ///
@@ -22,7 +17,7 @@ use crate::api::{
 /// let url = api.create_authrorized_url(Method::GET, "bucket", "key", 60);
 /// ```
 #[derive(Builder)]
-pub struct GenPrivateUrlApi {
+pub struct GenPrivateUrlConfig {
     /// Bucket name
     pub bucket_name: String,
 
@@ -50,39 +45,55 @@ pub struct GenPrivateUrlApi {
     pub security_token: Option<String>,
 }
 
+pub struct GenPrivateUrlOperation {
+    config: GenPrivateUrlConfig,
+    object_config: ObjectConfig,
+}
+
+impl GenPrivateUrlOperation {
+    pub fn new(config: GenPrivateUrlConfig, object_config: ObjectConfig) -> Self {
+        Self {
+            config,
+            object_config,
+        }
+    }
+}
+
+impl Sealed for GenPrivateUrlOperation {}
+
 #[async_trait::async_trait]
-impl ApiExecutor<String> for GenPrivateUrlApi {
-    async fn execute(
-        &mut self,
-        object_config: ObjectConfig,
-        _: Arc<ApiClient>,
-        _: AuthorizationService,
-    ) -> Result<String, Error> {
-        let signature = object_config.authorization_private_url(
+impl ApiOperation for GenPrivateUrlOperation {
+    type Response = String;
+    type Error = Error;
+
+    async fn execute(&self) -> Result<String, Error> {
+        let config = &self.config;
+        let signature = self.object_config.authorization_private_url(
             Method::GET,
-            &self.bucket_name,
-            &self.key_name,
-            self.expires,
+            config.bucket_name.as_str(),
+            config.key_name.as_str(),
+            config.expires,
         )?;
         // calculate expire time since epoch time: (now - 1970-01-01 00:00:00) + expires
-        let expire_time = self.expires + SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-        let url =
-            object_config.generate_final_host(self.bucket_name.as_str(), self.key_name.as_str());
+        let expire_time = config.expires + SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let url = self
+            .object_config
+            .generate_final_host(config.bucket_name.as_str(), config.key_name.as_str());
         let mut url = format!(
             "{}?UCloudPublicKey={}&Signature={}&Expires={}",
-            url, object_config.public_key, signature, expire_time
+            url, self.object_config.public_key, signature, expire_time
         );
         // add attachment filename param if needed.
-        if let Some(ref attachment_filename) = self.attachment_filename {
-            url = format!("{}&ufileattname={}", url, attachment_filename);
+        if let Some(ref attachment_filename) = config.attachment_filename {
+            url = format!("{url}&ufileattname={attachment_filename}");
         }
         // add security token param if needed.
-        if let Some(ref security_token) = self.security_token {
-            url = format!("{}&SecurityToken={}", url, security_token);
+        if let Some(ref security_token) = config.security_token {
+            url = format!("{url}&SecurityToken={security_token}");
         }
         // add iop-cmd as query params if needed.
-        if let Some(ref iop_cmd) = self.iop_cmd {
-            url = format!("{}&iopcmd={}", url, iop_cmd);
+        if let Some(ref iop_cmd) = config.iop_cmd {
+            url = format!("{url}&iopcmd={iop_cmd}");
         }
         Ok(url)
     }
