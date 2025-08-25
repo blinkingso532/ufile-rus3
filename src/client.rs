@@ -16,6 +16,7 @@ use crate::{
     },
 };
 
+#[derive()]
 pub struct S3Client {
     object_config: ObjectConfig,
     http_client: HttpClient,
