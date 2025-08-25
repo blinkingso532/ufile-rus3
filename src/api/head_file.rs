@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 
 use anyhow::Error;
-use builder_pattern::Builder;
 use chrono::Local;
 use reqwest::{Method, header::HeaderMap};
 
@@ -15,6 +14,7 @@ use crate::{
     },
     define_operation_struct,
 };
+define_operation_struct!(HeadFileOperation, HeadFileConfig);
 
 #[derive(Builder)]
 pub struct HeadFileConfig {
@@ -32,8 +32,6 @@ pub struct HeadFileConfig {
     #[default(None)]
     pub security_token: Option<String>,
 }
-
-define_operation_struct!(HeadFileOperation, HeadFileConfig);
 
 #[async_trait::async_trait]
 impl ApiOperation for HeadFileOperation {

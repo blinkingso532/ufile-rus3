@@ -3,7 +3,6 @@
 use std::{collections::HashMap, fmt::Display};
 
 use anyhow::Error;
-use builder_pattern::Builder;
 use chrono::Local;
 use reqwest::{
     Method,
@@ -20,6 +19,8 @@ use crate::{
     },
     define_operation_struct,
 };
+
+define_operation_struct!(MultipartFinishOperation, MultipartFinishConfig);
 
 /// UNCHANGED（默认值）:保持初始化时设置的用户自定义元数据不变。
 ///
@@ -65,8 +66,6 @@ pub struct MultipartFinishConfig {
     #[default(None)]
     pub security_token: Option<String>,
 }
-
-define_operation_struct!(MultipartFinishOperation, MultipartFinishConfig);
 
 #[async_trait::async_trait]
 impl ApiOperation for MultipartFinishOperation {

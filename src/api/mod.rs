@@ -6,10 +6,13 @@ mod multipart_finish;
 mod multipart_init;
 pub mod object;
 mod put_file;
+mod req_builder;
 mod stream;
 mod traits;
 mod util;
 mod validator;
+
+pub use req_builder::{PutObjectRequest, PutObjectRequestBuilder};
 
 pub use util::{GenPrivateUrlConfig, GenPrivateUrlOperation};
 
@@ -31,8 +34,6 @@ pub use multipart_file::{
 pub use multipart_init::{
     MultipartInitConfig, MultipartInitOperation, MultipartInitOperationBuilder,
 };
-/// Re-export put_file module
-pub use put_file::{PutFileConfig, PutFileOperation, PutFileOperationBuilder};
 /// Re-export trait module
 pub use traits::ApiOperation;
 

@@ -1,12 +1,10 @@
-use ::builder_pattern::Builder;
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::io;
 use tokio::io::AsyncSeekExt;
 
 use crate::{
-    api::{object::PutObjectResultResponse, traits::ApiOperation, validator::*},
+    api::{object::PutObjectResultResponse, traits::ApiOperation},
     define_operation_struct,
 };
 
@@ -17,29 +15,27 @@ use tokio::io::AsyncReadExt;
 
 use crate::api::object::ObjectOptAuthParam;
 
+define_operation_struct!(PutFileOperation, PutFileConfig);
+
 /// Put file operation configuration
 #[derive(Builder)]
 pub struct PutFileConfig {
     /// Required: Cloud object name
-    #[validator(is_key_name_not_empty)]
     #[public]
     #[into]
     key_name: String,
 
     /// Required: File to upload
-    #[validator(is_path_buf_valid)]
     #[public]
     #[into]
     file: PathBuf,
 
     /// Required: File MIME type
-    #[validator(is_mime_type_valid)]
     #[public]
     #[into]
     mime_type: String,
 
     /// Required: Bucket name
-    #[validator(is_bucket_name_not_empty)]
     #[public]
     #[into]
     bucket_name: String,
@@ -69,8 +65,6 @@ pub struct PutFileConfig {
     #[public]
     security_token: Option<String>,
 }
-
-define_operation_struct!(PutFileOperation, PutFileConfig);
 
 #[async_trait::async_trait]
 impl ApiOperation for PutFileOperation {

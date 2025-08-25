@@ -8,7 +8,6 @@ use std::collections::HashMap;
 
 use crate::api::traits::ApiOperation;
 use anyhow::Error;
-use builder_pattern::Builder;
 use bytes::Bytes;
 use chrono::Local;
 use reqwest::{Method, header::HeaderMap};
@@ -20,6 +19,8 @@ use crate::{
     },
     define_operation_struct,
 };
+
+define_operation_struct!(MultipartFileOperation, MultipartFileConfig);
 
 #[derive(Builder)]
 pub struct MultipartFileConfig {
@@ -45,8 +46,6 @@ pub struct MultipartFileConfig {
     #[default(None)]
     pub security_token: Option<String>,
 }
-
-define_operation_struct!(MultipartFileOperation, MultipartFileConfig);
 
 #[async_trait::async_trait]
 impl ApiOperation for MultipartFileOperation {

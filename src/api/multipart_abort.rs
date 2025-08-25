@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 
 use anyhow::Error;
-use builder_pattern::Builder;
 use chrono::Local;
 use reqwest::{
     Method,
@@ -18,6 +17,8 @@ use crate::{
     },
     define_operation_struct,
 };
+
+define_operation_struct!(MultipartAbortOperation, MultipartAbortConfig);
 
 /// This api used to abort the multipart upload task.
 #[derive(Builder)]
@@ -33,8 +34,6 @@ pub struct MultipartAbortConfig {
     #[default(None)]
     pub security_token: Option<String>,
 }
-
-define_operation_struct!(MultipartAbortOperation, MultipartAbortConfig);
 
 #[async_trait::async_trait]
 impl ApiOperation for MultipartAbortOperation {

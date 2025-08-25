@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use anyhow::Error;
-use builder_pattern::Builder;
 use chrono::Local;
 use reqwest::{
     Method,
@@ -16,6 +15,8 @@ use crate::{
     },
     define_operation_struct,
 };
+
+define_operation_struct!(MultipartInitOperation, MultipartInitConfig);
 
 #[derive(Builder)]
 pub struct MultipartInitConfig {
@@ -58,8 +59,6 @@ pub struct MultipartInitConfig {
     #[public]
     security_token: Option<String>,
 }
-
-define_operation_struct!(MultipartInitOperation, MultipartInitConfig);
 
 #[async_trait::async_trait]
 impl ApiOperation for MultipartInitOperation {

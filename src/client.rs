@@ -8,7 +8,57 @@ use reqwest::{
 use std::result::Result;
 use tokio::fs::File;
 
-use crate::api::{ProgressStream, object::BaseResponse};
+use crate::{
+    AuthorizationService,
+    api::{
+        ObjectConfig, ProgressStream, PutObjectRequest, PutObjectRequestBuilder,
+        object::BaseResponse,
+    },
+};
+
+pub struct S3Client {
+    object_config: ObjectConfig,
+    http_client: HttpClient,
+    auth_service: AuthorizationService,
+}
+
+impl S3Client {
+    pub fn new(object_config: ObjectConfig) -> Self {
+        Self {
+            object_config,
+            http_client: HttpClientBuilder::default().build().unwrap(),
+            auth_service: AuthorizationService,
+        }
+    }
+
+    pub fn with_http_client(mut self, http_client: HttpClient) -> Self {
+        self.http_client = http_client;
+        self
+    }
+
+    pub fn with_auth_service(mut self, auth_service: AuthorizationService) -> Self {
+        self.auth_service = auth_service;
+        self
+    }
+
+    pub fn object_config(&self) -> ObjectConfig {
+        self.object_config.clone()
+    }
+
+    pub fn http_client(&self) -> HttpClient {
+        self.http_client.clone()
+    }
+
+    pub fn authorization_service(&self) -> AuthorizationService {
+        self.auth_service
+    }
+
+    pub fn put_object(
+        &self,
+    ) -> PutObjectRequestBuilder<'_, (), (), (), (), (), (), (), (), (), (), (), (), (), ()> {
+        PutObjectRequest::new()
+    }
+}
 
 #[repr(transparent)]
 #[derive(Clone)]
