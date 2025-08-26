@@ -1,4 +1,5 @@
 //! This module provides validator functions for api field's validation checking.
+#![allow(unused)]
 use std::{borrow::Cow, fs::File as StdFile, path::PathBuf};
 
 use bytes::Bytes;

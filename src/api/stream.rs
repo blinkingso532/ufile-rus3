@@ -5,30 +5,51 @@ use std::{
 };
 
 use bytes::Bytes;
-use std::fs::File as StdFile;
-use tokio::io::{AsyncRead, BufReader};
-use tokio::{fs::File, io::ReadBuf};
-use tokio_stream::Stream;
+use futures_util::{
+    AsyncRead, Stream,
+    io::{BufReader, Cursor},
+};
+use pin_project_lite::pin_project;
 
-/// struct to wrap file reader with progress
-pub(crate) struct ProgressStream {
-    reader: BufReader<File>,
-    progress: Arc<AtomicUsize>,
-    total_size: usize,
+pin_project! {
+    pub struct ByteStream {
+        #[pin]
+        inner: Inner
+    }
 }
 
-impl From<StdFile> for ProgressStream {
-    fn from(file: StdFile) -> Self {
-        let total_size = file.metadata().unwrap().len() as usize;
+struct Inner(bytes::Bytes);
+
+impl ByteStream {
+    pub fn from_bytes(bytes: Bytes) -> Self {
         Self {
-            reader: BufReader::new(file.into()),
-            progress: Arc::new(AtomicUsize::new(0)),
-            total_size,
+            inner: Inner(bytes),
         }
     }
 }
 
-impl Stream for ProgressStream {
+/// struct to wrap file reader with progress
+pub struct ProgressStream<T> {
+    reader: BufReader<T>,
+    progress: Arc<AtomicUsize>,
+    size: usize,
+}
+
+impl<T: AsyncRead + Unpin> ProgressStream<T> {
+    pub fn new(reader: T, size: usize) -> Self {
+        Self {
+            reader: BufReader::new(reader),
+            progress: Arc::new(AtomicUsize::new(0)),
+            size,
+        }
+    }
+
+    pub fn get_progress(&self) -> usize {
+        self.progress.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+impl<T: AsyncRead + Unpin> Stream for ProgressStream<T> {
     type Item = Result<bytes::Bytes, std::io::Error>;
 
     fn poll_next(
@@ -37,29 +58,27 @@ impl Stream for ProgressStream {
     ) -> std::task::Poll<Option<Self::Item>> {
         // 8kb buffer
         let mut buffer = [0u8; 8092];
-        let mut buf = ReadBuf::new(&mut buffer);
         let this = self.get_mut();
         let reader = Pin::new(&mut this.reader);
-        match reader.poll_read(cx, &mut buf) {
-            std::task::Poll::Ready(Ok(())) => {
-                let bytes = buf.filled().to_vec();
-                if bytes.is_empty() {
+        match reader.poll_read(cx, &mut buffer) {
+            std::task::Poll::Ready(Ok(n)) => {
+                if n == 0 {
                     // we are at the end of file.
                     return Poll::Ready(None);
                 }
-                // read full bytes to the buffer.
+                let bytes = buffer[0..n].to_vec();
                 let num_bytes_read = bytes.len();
                 let prev = this
                     .progress
                     .fetch_add(num_bytes_read, std::sync::atomic::Ordering::Relaxed);
                 let current = prev + num_bytes_read;
                 // 计算并打印进度
-                let percent = (current as f64 / this.total_size as f64) * 100.0;
+                let percent = (current as f64 / this.size as f64) * 100.0;
                 tracing::debug!(
                     "Upload progress: {:.2}% ({} bytes/{} bytes)",
                     percent,
                     current,
-                    this.total_size
+                    this.size
                 );
                 Poll::Ready(Some(Ok(Bytes::from_iter(bytes))))
             }
@@ -69,5 +88,14 @@ impl Stream for ProgressStream {
             }
             std::task::Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+impl From<ByteStream> for ProgressStream<Cursor<Bytes>> {
+    fn from(stream: ByteStream) -> Self {
+        let bytes = stream.inner.0;
+        let size = bytes.len();
+        let cursor = Cursor::new(bytes);
+        Self::new(cursor, size)
     }
 }

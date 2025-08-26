@@ -3,59 +3,51 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Error;
-use builder_pattern::Builder;
+use derive_builder::Builder;
 use reqwest::Method;
 
 use crate::api::{ApiOperation, ObjectConfig, Sealed};
 
-/// This struct describe the request of generating private URL.
-///
-/// # Example
-///
-/// ```
-/// let api = GenPrivateUrlApi::new();
-/// let url = api.create_authrorized_url(Method::GET, "bucket", "key", 60);
-/// ```
+/// Request for generating private URL which will be expired in `expires` seconds.
 #[derive(Builder)]
-pub struct GenPrivateUrlConfig {
-    /// Bucket name
+pub struct GenPrivateUrlRequest {
+    /// Required: Bucket name.
+    #[builder(setter(into))]
     pub bucket_name: String,
 
-    /// Obejct name.
+    /// Required: Object name.
+    #[builder(setter(into))]
     pub key_name: String,
 
-    /// Expire time duration from now in seconds.
-    /// expires must be greater than 0.
+    /// Required: Expire time in `seconds`.
+    /// Default: 86400
+    #[builder(default = "86400")]
     pub expires: u64,
 
-    /// IOP command used for image objects.
-    /// If specified, the generated URL will contains the iop command as query params.
-    #[default(None)]
+    /// Optional: IOP command for image operations.
+    #[builder(setter(into, strip_option), default)]
     pub iop_cmd: Option<String>,
 
-    /// Attachment filename,
-    /// If specified, the generated URL will contains the attachment filename.
-    /// The key name is `ufileattname`.
-    #[default(None)]
+    /// Optional: Attachment filename.
+    ///
+    /// Default: None
+    #[builder(setter(into, strip_option), default)]
     pub attachment_filename: Option<String>,
 
-    /// STS temporary security token.
-    /// If specified, the generated URL will contains the sts token.
-    #[default(None)]
+    /// Optional: Security token.
+    ///
+    /// Default: None
+    #[builder(setter(into, strip_option), default)]
     pub security_token: Option<String>,
 }
 
 pub struct GenPrivateUrlOperation {
-    config: GenPrivateUrlConfig,
     object_config: ObjectConfig,
 }
 
 impl GenPrivateUrlOperation {
-    pub fn new(config: GenPrivateUrlConfig, object_config: ObjectConfig) -> Self {
-        Self {
-            config,
-            object_config,
-        }
+    pub fn new(object_config: ObjectConfig) -> Self {
+        Self { object_config }
     }
 }
 
@@ -63,36 +55,44 @@ impl Sealed for GenPrivateUrlOperation {}
 
 #[async_trait::async_trait]
 impl ApiOperation for GenPrivateUrlOperation {
+    type Request = GenPrivateUrlRequest;
     type Response = String;
     type Error = Error;
 
-    async fn execute(&self) -> Result<String, Error> {
-        let config = &self.config;
+    async fn execute(&self, req: Self::Request) -> Result<String, Error> {
+        let GenPrivateUrlRequest {
+            bucket_name,
+            key_name,
+            expires,
+            attachment_filename,
+            security_token,
+            iop_cmd,
+        } = req;
         let signature = self.object_config.authorization_private_url(
             Method::GET,
-            config.bucket_name.as_str(),
-            config.key_name.as_str(),
-            config.expires,
+            bucket_name.as_str(),
+            key_name.as_str(),
+            expires,
         )?;
         // calculate expire time since epoch time: (now - 1970-01-01 00:00:00) + expires
-        let expire_time = config.expires + SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let expire_time = expires + SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         let url = self
             .object_config
-            .generate_final_host(config.bucket_name.as_str(), config.key_name.as_str());
+            .generate_final_host(bucket_name.as_str(), key_name.as_str());
         let mut url = format!(
             "{}?UCloudPublicKey={}&Signature={}&Expires={}",
             url, self.object_config.public_key, signature, expire_time
         );
         // add attachment filename param if needed.
-        if let Some(ref attachment_filename) = config.attachment_filename {
+        if let Some(ref attachment_filename) = attachment_filename {
             url = format!("{url}&ufileattname={attachment_filename}");
         }
         // add security token param if needed.
-        if let Some(ref security_token) = config.security_token {
+        if let Some(ref security_token) = security_token {
             url = format!("{url}&SecurityToken={security_token}");
         }
         // add iop-cmd as query params if needed.
-        if let Some(ref iop_cmd) = config.iop_cmd {
+        if let Some(ref iop_cmd) = iop_cmd {
             url = format!("{url}&iopcmd={iop_cmd}");
         }
         Ok(url)

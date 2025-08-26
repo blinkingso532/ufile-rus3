@@ -10,17 +10,45 @@ use reqwest::{
 };
 
 use crate::{
+    AuthorizationService,
     api::{
-        ApiOperation,
-        object::{
-            BaseResponse, FinishUploadResponse, InitMultipartState, MultipartUploadState,
-            ObjectOptAuthParam,
-        },
+        ApiOperation, ObjectOptAuthParamBuilder,
+        object::{BaseResponse, FinishUploadResponse, InitMultipartState, MultipartUploadState},
     },
-    define_operation_struct,
+    define_api_request, define_operation_struct,
 };
 
-define_operation_struct!(MultipartFinishOperation, MultipartFinishConfig);
+define_operation_struct!(MultipartFinishOperation);
+define_api_request!(
+    MultipartFinishRequest,
+    MultipartFinishOperationBuilder,
+    FinishUploadResponse,
+    {
+        /// Required: Slice initial state
+        pub state: InitMultipartState,
+
+        /// Required: Slice states
+        pub part_states: Vec<MultipartUploadState>,
+
+        /// Optional: new object name used to replace old one if finish multipart upload task successfully.
+        #[builder(setter(into, strip_option), default)]
+        pub new_object: Option<String>,
+
+        /// Optional: UNCHANGED（默认值）:保持初始化时设置的用户自定义元数据不变。
+        ///
+        /// REPLACE：忽略初始化分片时设置的用户自定义元数据，直接采用Finish请求中指定的元数据。
+        #[builder(setter(into, strip_option), default)]
+        pub metadata_directive: Option<MetadataDirective>,
+
+        /// Optional: User custom headers metadata.
+        #[builder(setter(into, strip_option), default)]
+        pub metadata: Option<HashMap<String, String>>,
+
+        /// Optional: Security Token
+        #[builder(setter(into, strip_option), default)]
+        pub security_token: Option<String>,
+    }
+);
 
 /// UNCHANGED（默认值）:保持初始化时设置的用户自定义元数据不变。
 ///
@@ -41,67 +69,48 @@ impl Display for MetadataDirective {
     }
 }
 
-#[derive(Builder, Clone)]
-pub struct MultipartFinishConfig {
-    /// State of multipart upload task.
-    pub state: InitMultipartState,
-
-    pub part_states: Vec<MultipartUploadState>,
-
-    /// new object name used to replace old one if finish multipart upload task successfully.
-    #[default(None)]
-    pub new_object: Option<String>,
-
-    /// UNCHANGED（默认值）:保持初始化时设置的用户自定义元数据不变。
-    ///
-    /// REPLACE：忽略初始化分片时设置的用户自定义元数据，直接采用Finish请求中指定的元数据。
-    #[default(None)]
-    pub metadata_directive: Option<MetadataDirective>,
-
-    /// User custom headers metadata.
-    #[default(None)]
-    pub metadata: Option<HashMap<String, String>>,
-
-    /// Security Token
-    #[default(None)]
-    pub security_token: Option<String>,
-}
-
 #[async_trait::async_trait]
 impl ApiOperation for MultipartFinishOperation {
+    type Request = MultipartFinishRequest;
     type Response = FinishUploadResponse;
     type Error = Error;
 
-    async fn execute(&self) -> Result<Self::Response, Self::Error> {
-        let mut config = self.config.clone();
-        let mime_type = config
-            .state
+    async fn execute(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
+        let MultipartFinishRequest {
+            state,
+            mut part_states,
+            new_object,
+            metadata_directive,
+            metadata,
+            security_token,
+            ..
+        } = req;
+        let mime_type = state
             .mime_type
             .clone()
             .ok_or(Error::msg("mime type is unset."))?;
         // let mime_type = "text/plain".to_string();
         let date = Local::now().format("%Y%m%d%H%M%S").to_string();
-        let auth_object = ObjectOptAuthParam::new()
+        let auth_object = ObjectOptAuthParamBuilder::default()
             .method(Method::POST)
-            .bucket(config.state.bucket.clone())
-            .key_name(config.state.key_name.clone())
-            .content_type(Some(mime_type.clone()))
-            .date(Some(date.clone()))
-            .build();
-        let authorization = self
-            .auth_service
-            .authorization(&auth_object, self.object_config.clone())?;
+            .bucket(state.bucket.as_str())
+            .key_name(state.key_name.as_str())
+            .content_type(mime_type.as_str())
+            .date(date.as_str())
+            .build()?;
+        let authorization =
+            AuthorizationService.authorization(auth_object, self.object_config.clone())?;
         let mut headers = HeaderMap::new();
         headers.insert("Content-Type", mime_type.parse().unwrap());
         headers.insert("Accept", "*/*".parse().unwrap());
         headers.insert("Date", date.parse().unwrap());
         headers.insert("Authorization", authorization.parse().unwrap());
-        if let Some(ref security_token) = config.security_token
+        if let Some(ref security_token) = security_token
             && !security_token.is_empty()
         {
             headers.insert("SecurityToken", security_token.parse().unwrap());
         }
-        if let Some(ref directive) = config.metadata_directive {
+        if let Some(ref directive) = metadata_directive {
             headers.insert(
                 "X-Ufile-Metadata-Directive",
                 directive.to_string().parse().unwrap(),
@@ -110,19 +119,16 @@ impl ApiOperation for MultipartFinishOperation {
         // We must add metadata to headers if metadata is not empty.
         let url = self
             .object_config
-            .generate_final_host(config.state.bucket.as_str(), config.state.key_name.as_str());
+            .generate_final_host(state.bucket.as_str(), state.key_name.as_str());
         let url = format!(
             "{}?uploadId={}&newKey={}",
             url,
-            config.state.upload_id,
-            config.new_object.as_ref().unwrap_or(&String::new())
+            state.upload_id,
+            new_object.as_ref().unwrap_or(&String::new())
         );
         // calc body.
-        config
-            .part_states
-            .sort_by(|a, b| a.part_number.cmp(&b.part_number));
-        let body_buffer = config
-            .part_states
+        part_states.sort_by(|a, b| a.part_number.cmp(&b.part_number));
+        let body_buffer = part_states
             .iter()
             .map(|item| item.etag.clone())
             .collect::<Vec<_>>()
@@ -132,7 +138,7 @@ impl ApiOperation for MultipartFinishOperation {
             "Content-Length",
             body_buffer.len().to_string().parse().unwrap(),
         );
-        if let Some(ref metadata) = config.metadata {
+        if let Some(ref metadata) = metadata {
             for (k, v) in metadata {
                 headers.insert(
                     format!("X-Ufile-Meta-{k}").parse::<HeaderName>().unwrap(),

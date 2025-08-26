@@ -1,20 +1,15 @@
 use std::{collections::HashMap, str::FromStr, time::Duration};
 
-use anyhow::Error;
-use reqwest::{
-    Body, Client, ClientBuilder, Method, Proxy, Url,
-    header::{HeaderMap, HeaderName, HeaderValue},
-};
-use std::result::Result;
-use tokio::fs::File;
-
 use crate::{
     AuthorizationService,
     api::{
-        ObjectConfig, ProgressStream, PutObjectRequest, PutObjectRequestBuilder,
-        object::BaseResponse,
+        BaseResponse, ByteStream, GenPrivateUrlRequestBuilder, HeadFileRequestBuilder,
+        MultipartAbortRequestBuilder, MultipartFileRequestBuilder, MultipartFinishRequestBuilder,
+        MultipartInitRequestBuilder, ObjectConfig, ProgressStream, PutFileRequestBuilder,
     },
 };
+use anyhow::Error;
+use reqwest::{Body, Client, ClientBuilder, Method, Proxy, Url, header::HeaderMap};
 
 #[derive(Clone)]
 pub struct S3Client {
@@ -54,10 +49,52 @@ impl S3Client {
         self.auth_service
     }
 
-    pub fn put_object(
-        &self,
-    ) -> PutObjectRequestBuilder<'_, (), (), (), (), (), (), (), (), (), (), (), (), (), ()> {
-        PutObjectRequest::new()
+    /// Put object request builder.
+    #[must_use]
+    pub fn put_object(&self) -> PutFileRequestBuilder {
+        PutFileRequestBuilder::default()
+            .object_config(self.object_config())
+            .client(self.http_client())
+    }
+
+    /// Init multipart upload request builder.
+    pub fn multipart_init(&self) -> MultipartInitRequestBuilder {
+        MultipartInitRequestBuilder::default()
+            .object_config(self.object_config())
+            .client(self.http_client())
+    }
+
+    /// Upload multipart file slice request builder.
+    pub fn multipart_upload(&self) -> MultipartFileRequestBuilder {
+        MultipartFileRequestBuilder::default()
+            .object_config(self.object_config())
+            .client(self.http_client())
+    }
+
+    /// Finish multipart upload request builder.
+    pub fn multipart_finish(&self) -> MultipartFinishRequestBuilder {
+        MultipartFinishRequestBuilder::default()
+            .object_config(self.object_config())
+            .client(self.http_client())
+    }
+
+    /// Abort multipart upload request builder.
+    pub fn multipart_abort(&self) -> MultipartAbortRequestBuilder {
+        MultipartAbortRequestBuilder::default()
+            .object_config(self.object_config())
+            .client(self.http_client())
+    }
+
+    /// Get file heads request builder.
+    pub fn head_object(&self) -> HeadFileRequestBuilder {
+        HeadFileRequestBuilder::default()
+            .object_config(self.object_config())
+            .client(self.http_client())
+    }
+
+    /// Generate private url request builder.
+    pub fn gen_private_url(&self) -> GenPrivateUrlRequestBuilder {
+        GenPrivateUrlRequestBuilder::default()
     }
 }
 
@@ -157,31 +194,22 @@ impl HttpClient {
         &self,
         url: &str,
         method: Method,
-        headers: &[(&str, &str)],
-        file: File,
+        headers: HeaderMap,
+        stream: ByteStream,
     ) -> Result<BaseResponse, Error> {
-        let headers = headers
-            .iter()
-            .map(|(header_name, header_value)| {
-                Ok((
-                    HeaderName::from_str(header_name).map_err(|e| Error::msg(e.to_string()))?,
-                    HeaderValue::from_str(header_value).map_err(|e| Error::msg(e.to_string()))?,
-                ))
-            })
-            .collect::<Result<HeaderMap, Error>>()?;
         // Check authorization
         let signature = headers.get("Authorization");
         if signature.is_none() {
             return Err(Error::msg("No authorization header found"));
         }
-        let std_file = file.into_std().await;
         let response = self
             .inner
             .request(method, Url::from_str(url)?)
             .headers(headers)
-            .body(Body::wrap_stream(ProgressStream::from(std_file)))
+            .body(Body::wrap_stream(ProgressStream::from(stream)))
             .send()
             .await?;
+        tracing::debug!("send file response: {:?}", response);
         let response_headers = response
             .headers()
             .iter()

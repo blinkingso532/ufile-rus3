@@ -3,7 +3,7 @@ use base64::Engine;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 
-use crate::api::object::{ObjectConfig, ObjectOptAuthParam};
+use crate::api::{ObjectConfig, ObjectOptAuthParam};
 
 // 签名器 trait
 pub trait Signer {
@@ -35,7 +35,7 @@ pub struct AuthorizationService;
 impl AuthorizationService {
     pub fn authorization(
         &self,
-        param: &ObjectOptAuthParam,
+        param: ObjectOptAuthParam,
         object_config: ObjectConfig,
     ) -> Result<String, Error> {
         let method = &param.method;

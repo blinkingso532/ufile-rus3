@@ -5,6 +5,6 @@ pub(crate) mod constant;
 pub mod error;
 mod macros;
 pub mod util;
-pub const VERSION: &str = include_str!("../version");
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub use auth::{AuthorizationService, Signer};

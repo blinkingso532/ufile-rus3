@@ -7,63 +7,68 @@ use chrono::Local;
 use reqwest::{Method, header::HeaderMap};
 
 use crate::{
+    AuthorizationService,
     api::{
         ApiOperation,
-        object::{BaseResponse, HeadFileResponse, ObjectOptAuthParam},
-        validator::{is_bucket_name_not_empty, is_key_name_not_empty},
+        object::{BaseResponse, HeadFileResponse, ObjectOptAuthParamBuilder},
     },
-    define_operation_struct,
+    define_api_request, define_operation_struct,
 };
-define_operation_struct!(HeadFileOperation, HeadFileConfig);
+define_operation_struct!(HeadFileOperation);
 
-#[derive(Builder)]
-pub struct HeadFileConfig {
-    /// Bucket name
-    #[validator(is_bucket_name_not_empty)]
-    #[into]
+define_api_request!(HeadFileRequest,
+HeadFileOperationBuilder,
+HeadFileResponse,
+{
+    /// Required: Bucket name
+    #[builder(setter(into))]
     pub bucket_name: String,
 
-    /// Key name of the file which means file name in cloud.
-    #[validator(is_key_name_not_empty)]
-    #[into]
+    /// Required: Key name of the file or object name.
+    #[builder(setter(into))]
     pub key_name: String,
 
-    /// `STS` temporary security token. but not implementated at now.
-    #[default(None)]
+    /// Optional: `STS` temporary security token. but not implementated at now.
+    #[builder(setter(into, strip_option), default)]
     pub security_token: Option<String>,
-}
+});
 
 #[async_trait::async_trait]
 impl ApiOperation for HeadFileOperation {
+    type Request = HeadFileRequest;
     type Response = HeadFileResponse;
     type Error = Error;
 
-    async fn execute(&self) -> Result<Self::Response, Self::Error> {
-        let config = &self.config;
+    async fn execute(&self, req: Self::Request) -> Result<Self::Response, Self::Error> {
+        let HeadFileRequest {
+            bucket_name,
+            key_name,
+            security_token,
+            ..
+        } = req;
         let date = Local::now().format("&Y%m%d%H%M%S").to_string();
-        let auth_object = ObjectOptAuthParam::new()
+        let auth_object = ObjectOptAuthParamBuilder::default()
             .method(Method::HEAD)
-            .bucket(config.bucket_name.clone())
-            .key_name(config.key_name.clone())
-            .content_type(Some("application/json".into()))
-            .date(Some(date.clone()))
-            .build();
-        let authorization = self
-            .auth_service
-            .authorization(&auth_object, self.object_config.clone())?;
+            .bucket(bucket_name.clone())
+            .key_name(key_name.clone())
+            .content_type("application/json")
+            .date(date.as_str())
+            .build()?;
+        let authorization =
+            AuthorizationService.authorization(auth_object, self.object_config.clone())?;
         let mut headers = HeaderMap::new();
         headers.insert("Content-Type", "application/json".parse().unwrap());
         headers.insert("Accept", "*/*".parse().unwrap());
         headers.insert("Date", date.parse().unwrap());
         headers.insert("Authorization", authorization.parse().unwrap());
-        if let Some(ref security_token) = config.security_token
+        if let Some(ref security_token) = security_token
             && !security_token.is_empty()
         {
             headers.insert("SecurityToken", security_token.parse().unwrap());
         }
         let url = self
             .object_config
-            .generate_final_host(config.bucket_name.as_str(), config.key_name.as_str());
+            .generate_final_host(bucket_name.as_str(), key_name.as_str());
         // Request to get the file metadata containing content-size and content-type.
         let resp = self
             .client
@@ -100,7 +105,7 @@ impl ApiOperation for HeadFileOperation {
         let resp = resp.json::<BaseResponse>().await?;
         tracing::debug!(
             "Failed to get file head for: {} with error: {:?}",
-            config.key_name,
+            key_name,
             resp
         );
         Err(Error::msg("Failed to get file head"))

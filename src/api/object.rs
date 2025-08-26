@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Error;
-use builder_pattern::Builder;
+use derive_builder::Builder;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
@@ -27,41 +27,43 @@ impl Display for UfileProtocol {
     }
 }
 
-#[derive(Debug, Clone, Builder)]
+#[derive(Debug, Builder)]
 pub struct ObjectOptAuthParam {
     /// Required.
     /// Specify the http method.
-    pub(crate) method: Method,
+    pub method: Method,
     /// Required.
     /// Specify the name of the bucket.
-    pub(crate) bucket: String,
+    #[builder(setter(into))]
+    pub bucket: String,
     /// Required.
     /// Specify the name of the object.
-    pub(crate) key_name: String,
+    #[builder(setter(into))]
+    pub key_name: String,
     /// Content-Type.
     /// Specify the content type of the file.
-    #[default(None)]
-    pub(crate) content_type: Option<String>,
+    #[builder(setter(into, strip_option), default)]
+    pub content_type: Option<String>,
     /// Content-MD5.
     /// Specify the md5 of the file.
-    #[default(None)]
-    pub(crate) content_md5: Option<String>,
+    #[builder(setter(into, strip_option), default)]
+    pub content_md5: Option<String>,
     /// Date.
     /// Specify the date of the request.
-    #[default(None)]
-    pub(crate) date: Option<String>,
+    #[builder(setter(into, strip_option), default)]
+    pub date: Option<String>,
     /// Specify the source file to be copied.
     ///
     /// Example:
     /// ```
     /// let source = "ufile://bucket-name/file-name";
     /// ```
-    #[default(None)]
-    pub(crate) x_ufile_copy_source: Option<String>,
+    #[builder(setter(into, strip_option), default)]
+    pub x_ufile_copy_source: Option<String>,
     /// X-UFile-Copy-Source-Range.
     /// Specify the range of the file to be copied.
-    #[default(None)]
-    pub(crate) x_ufile_copy_source_range: Option<String>,
+    #[builder(setter(into, strip_option), default)]
+    pub x_ufile_copy_source_range: Option<String>,
 }
 
 /// Configuration for Ucloud object operations.
@@ -70,38 +72,33 @@ pub struct ObjectOptAuthParam {
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]
 pub struct ObjectConfig {
     /// default http request endpoint.
-    #[into]
-    #[default("https://api.ucloud.cn".into())]
-    endpoint: String,
+    #[builder(default = "https://api.ucloud.cn".to_string())]
+    #[builder(setter(into))]
+    pub endpoint: String,
     /// private key
-    #[into]
+    #[builder(setter(into))]
     pub private_key: String,
     /// public key
-    #[into]
+    #[builder(setter(into))]
     pub public_key: String,
     /// 仓库地区 (eg: 'cn-bj')
     #[serde(rename = "Region")]
-    #[public]
-    #[into]
-    region: String,
-
+    #[builder(setter(into))]
+    pub region: String,
     /// 代理后缀 (eg: 'ufileos.com')
     #[serde(rename = "ProxySuffix")]
-    #[default(None)]
-    #[public]
-    proxy_suffix: Option<String>,
+    #[builder(setter(into, strip_option), default)]
+    pub proxy_suffix: Option<String>,
 
     /// 自定义域名 (eg: 'api.ucloud.cn')：若配置了非空自定义域名，则使用自定义域名，不会使用 region + proxySuffix 拼接
     #[serde(rename = "CustomHost")]
-    #[default(None)]
-    #[public]
-    custom_host: Option<String>,
+    #[builder(setter(into, strip_option), default)]
+    pub custom_host: Option<String>,
 
     /// protocol
     #[serde(skip)]
-    #[default(UfileProtocol::Https)]
-    #[public]
-    protocol: UfileProtocol,
+    #[builder(setter(into, strip_option), default)]
+    pub protocol: UfileProtocol,
 }
 
 impl Default for ObjectConfig {

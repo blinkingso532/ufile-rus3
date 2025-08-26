@@ -1,6 +1,3 @@
-//! As you can init a task to upload a file, and then you can abort the task if you want.
-//! So this module is used to create a task to abort the multipart upload task.
-
 use std::collections::HashMap;
 
 use anyhow::Error;
@@ -11,60 +8,68 @@ use reqwest::{
 };
 
 use crate::{
+    AuthorizationService,
     api::{
-        ApiOperation,
-        object::{BaseResponse, InitMultipartState, ObjectOptAuthParam},
+        ApiOperation, ObjectOptAuthParamBuilder,
+        object::{BaseResponse, InitMultipartState},
     },
-    define_operation_struct,
+    define_api_request, define_operation_struct,
 };
 
-define_operation_struct!(MultipartAbortOperation, MultipartAbortConfig);
+define_operation_struct!(MultipartAbortOperation);
 
-/// This api used to abort the multipart upload task.
-#[derive(Builder)]
-pub struct MultipartAbortConfig {
-    /// State of multipart upload task.
-    pub state: InitMultipartState,
+define_api_request!(
+    MultipartAbortRequest,
+    MultipartAbortOperationBuilder,
+    (),
+    {
+        /// Required: State of multipart upload task.
+        pub state: InitMultipartState,
 
-    /// User custom headers metadata.
-    #[default(None)]
-    pub metadata: Option<HashMap<String, String>>,
+        /// Optional: User custom headers metadata.
+        #[builder(setter(into, strip_option), default)]
+        pub metadata: Option<HashMap<String, String>>,
 
-    /// Security Token
-    #[default(None)]
-    pub security_token: Option<String>,
-}
+        /// Security Token
+        #[builder(setter(into, strip_option), default)]
+        pub security_token: Option<String>,
+    }
+);
 
 #[async_trait::async_trait]
 impl ApiOperation for MultipartAbortOperation {
+    type Request = MultipartAbortRequest;
     type Response = ();
     type Error = Error;
 
-    async fn execute(&self) -> Result<Self::Response, Self::Error> {
-        let config = &self.config;
-        let mime_type = config
-            .state
+    async fn execute(&self, request: Self::Request) -> Result<Self::Response, Self::Error> {
+        let MultipartAbortRequest {
+            state,
+            metadata,
+            security_token,
+            ..
+        } = request;
+        let mime_type = state
             .mime_type
             .clone()
             .ok_or(Error::msg("mime type is unset."))?;
         // let mime_type = "text/plain".to_string();
         let date = Local::now().format("%Y%m%d%H%M%S").to_string();
-        let auth_object = ObjectOptAuthParam::new()
+        let auth_object = ObjectOptAuthParamBuilder::default()
             .method(Method::DELETE)
-            .bucket(config.state.bucket.clone())
-            .key_name(config.state.key_name.clone())
-            .content_type(Some(mime_type.clone()))
-            .date(Some(date.clone()))
-            .build();
-        let authorization = self
-            .auth_service
-            .authorization(&auth_object, self.object_config.clone())?;
+            .bucket(state.bucket.as_str())
+            .key_name(state.key_name.as_str())
+            .content_type(mime_type.as_str())
+            .date(date.as_str())
+            .build()?;
+        let authorization =
+            AuthorizationService.authorization(auth_object, self.object_config.clone())?;
         let mut headers = HeaderMap::new();
         headers.insert("Content-Type", mime_type.parse().unwrap());
         headers.insert("Accept", "*/*".parse().unwrap());
         headers.insert("Date", date.parse().unwrap());
         headers.insert("Authorization", authorization.parse().unwrap());
-        if let Some(ref security_token) = config.security_token
+        if let Some(ref security_token) = security_token
             && !security_token.is_empty()
         {
             headers.insert("SecurityToken", security_token.parse().unwrap());
@@ -72,9 +77,9 @@ impl ApiOperation for MultipartAbortOperation {
         // We must add metadata to headers if metadata is not empty.
         let url = self
             .object_config
-            .generate_final_host(config.state.bucket.as_str(), config.state.key_name.as_str());
-        let url = format!("{}?uploadId={}", url, config.state.upload_id,);
-        if let Some(ref metadata) = config.metadata {
+            .generate_final_host(state.bucket.as_str(), state.key_name.as_str());
+        let url = format!("{}?uploadId={}", url, state.upload_id,);
+        if let Some(ref metadata) = metadata {
             for (k, v) in metadata {
                 headers.insert(
                     format!("X-Ufile-Meta-{k}").parse::<HeaderName>().unwrap(),

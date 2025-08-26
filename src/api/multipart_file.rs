@@ -1,100 +1,89 @@
-//! This mod create a new way to upload file to ucloud s3 server.
-//! It is adapted to be an option when your file is more than 1GB or more.
-//! You should not use put_file_api as if the file is overflow 1GB.
-//! Please check your file size before use this mod for when your file is smaller than 1GB
-//! or more smaller file, then use put_file_api.
-
 use std::collections::HashMap;
 
-use crate::api::traits::ApiOperation;
+use crate::{
+    AuthorizationService,
+    api::{ObjectOptAuthParamBuilder, traits::ApiOperation},
+    define_api_request,
+};
 use anyhow::Error;
 use bytes::Bytes;
 use chrono::Local;
 use reqwest::{Method, header::HeaderMap};
 
 use crate::{
-    api::{
-        object::{InitMultipartState, MultipartUploadState, ObjectOptAuthParam},
-        validator::is_buffer_not_empty,
-    },
+    api::object::{InitMultipartState, MultipartUploadState},
     define_operation_struct,
 };
 
-define_operation_struct!(MultipartFileOperation, MultipartFileConfig);
+define_operation_struct!(MultipartFileOperation);
+define_api_request!(
+    MultipartFileRequest,
+    MultipartFileOperationBuilder,
+    MultipartUploadState,
+    {
+        /// Required: Slice initial state
+        pub state: InitMultipartState,
 
-#[derive(Builder)]
-pub struct MultipartFileConfig {
-    /// Slice initial state
-    pub state: InitMultipartState,
+        /// Required: Slice data
+        pub buffer: Bytes,
 
-    /// Slice data
-    #[validator(is_buffer_not_empty)]
-    pub buffer: Bytes,
+        /// Required: Slice data size
+        pub buffer_size: u64,
 
-    /// slice data size, This is used to set Content-Length for content-length must be set
-    /// and must equal to the initial blk size returned by init mulipart api.
-    pub buffer_size: u64,
+        /// Required: Index of slices
+        pub part_index: usize,
 
-    /// Index of slices
-    pub part_index: usize,
+        /// Optional: Content-MD5
+        #[builder(setter(into, strip_option), default)]
+        pub content_md5: Option<String>,
 
-    /// Whether to verify md5 of the slice
-    #[default(false)]
-    pub is_verify_md5: bool,
-
-    ///  temporary `STS` token
-    #[default(None)]
-    pub security_token: Option<String>,
-}
+        ///  Optional: temporary `STS` token
+        #[builder(setter(into, strip_option), default)]
+        pub security_token: Option<String>,
+    }
+);
 
 #[async_trait::async_trait]
 impl ApiOperation for MultipartFileOperation {
+    type Request = MultipartFileRequest;
     type Response = MultipartUploadState;
     type Error = Error;
 
-    async fn execute(&self) -> Result<MultipartUploadState, Error> {
-        let config = &self.config;
+    async fn execute(&self, request: Self::Request) -> Result<MultipartUploadState, Error> {
+        let MultipartFileRequest {
+            state,
+            buffer,
+            part_index,
+            content_md5,
+            security_token,
+            ..
+        } = request;
         let date = Local::now().format("%Y%m%d%H%M%S").to_string();
-        let mime_type = config
-            .state
+        let mime_type = state
             .mime_type
             .clone()
             .ok_or(Error::msg("mime type is unset."))?;
-        let content_md5 = if config.is_verify_md5 {
-            Some(format!(
-                "{:x}",
-                ::md5::compute(config.buffer.iter().as_slice())
-            ))
-        } else {
-            None
-        };
-        // d35b134713ee4a6cb7606962941d7b46
-        tracing::debug!("content_md5: {content_md5:?}");
-        let auth_object = ObjectOptAuthParam::new()
+        let auth_object = ObjectOptAuthParamBuilder::default()
             .method(Method::PUT)
-            .bucket(config.state.bucket.clone())
-            .key_name(config.state.key_name.clone())
-            .content_type(Some(mime_type.clone()))
-            .date(Some(date.clone()))
-            .content_md5(content_md5.clone())
-            .build();
-        let authorization = self
-            .auth_service
-            .authorization(&auth_object, self.object_config.clone())?;
+            .bucket(state.bucket.as_str())
+            .key_name(state.key_name.as_str())
+            .content_type(mime_type.as_str())
+            .date(date.as_str())
+            .content_md5(content_md5.clone().unwrap_or_default())
+            .build()?;
+        let authorization =
+            AuthorizationService.authorization(auth_object, self.object_config.clone())?;
         let mut headers = HeaderMap::new();
         headers.insert("Content-Type", mime_type.parse().unwrap());
         headers.insert("Accept", "*/*".parse().unwrap());
         headers.insert("Date", date.parse().unwrap());
         headers.insert("Authorization", authorization.parse().unwrap());
-        headers.insert(
-            "Content-Length",
-            config.buffer.len().to_string().parse().unwrap(),
-        );
+        headers.insert("Content-Length", buffer.len().to_string().parse().unwrap());
         if let Some(content_md5) = content_md5 {
             headers.insert("Content-MD5", content_md5.parse().unwrap());
         }
 
-        if let Some(ref security_token) = config.security_token
+        if let Some(ref security_token) = security_token
             && !security_token.is_empty()
         {
             headers.insert("SecurityToken", security_token.parse().unwrap());
@@ -102,17 +91,17 @@ impl ApiOperation for MultipartFileOperation {
         // We must add metadata to headers if metadata is not empty.
         let url = self
             .object_config
-            .generate_final_host(config.state.bucket.as_str(), config.state.key_name.as_str());
+            .generate_final_host(state.bucket.as_str(), state.key_name.as_str());
         let url = format!(
             "{url}?uploadId={}&partNumber={}",
-            config.state.upload_id, config.part_index
+            state.upload_id, part_index
         );
         let resp = self
             .client
             .get_client()
             .put(url)
             .headers(headers)
-            .body(config.buffer.to_vec())
+            .body(buffer.to_vec())
             .send()
             .await?;
         tracing::debug!("Upload part file response: {resp:?}");

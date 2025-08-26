@@ -3,8 +3,8 @@
 use std::{fs::File, os::unix::fs::FileExt};
 
 use anyhow::Error;
-use builder_pattern::Builder;
 use bytes::Bytes;
+use derive_builder::Builder;
 
 /// The file chunk struct.
 /// It used to split file into pieces to upload.
@@ -27,13 +27,10 @@ use bytes::Bytes;
 #[derive(Builder)]
 pub struct ChunkFile {
     /// The file chunk bytes.
-    #[public]
     bytes: Bytes,
     /// The file chunk offset.
-    #[public]
     offset: u64,
     /// The file chunk size.
-    #[public]
     size: u64,
 }
 
@@ -76,11 +73,20 @@ impl ChunkFile {
         let mut buffer = vec![0u8; size as usize];
         let bytes = file.read_at(&mut buffer, offset);
         match bytes {
-            Ok(n) => Ok(ChunkFile::new()
+            Ok(n) => Ok(ChunkFileBuilder::default()
                 .bytes(Bytes::from(buffer[..n].to_vec()))
                 .offset(offset)
                 .size(size)
-                .build()),
+                .build()
+                .map_err(|e| {
+                    tracing::error!(
+                        "Failed to create chunk file, offset: {}, size: {}, err: {:?}",
+                        offset,
+                        size,
+                        e
+                    );
+                    anyhow::Error::from(e)
+                })?),
             Err(e) => {
                 tracing::error!(
                     "Failed to read file chunk, offset: {}, size: {}, err: {:?}",

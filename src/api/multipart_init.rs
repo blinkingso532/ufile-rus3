@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use anyhow::Error;
 use chrono::Local;
 use reqwest::{
@@ -8,93 +6,87 @@ use reqwest::{
 };
 
 use crate::{
-    api::{
-        ApiOperation,
-        object::{InitMultipartState, ObjectOptAuthParam},
-        validator::{is_bucket_name_not_empty, is_key_name_not_empty, is_mime_type_valid},
-    },
-    define_operation_struct,
+    AuthorizationService,
+    api::{ApiOperation, ObjectOptAuthParamBuilder, object::InitMultipartState},
+    define_api_request, define_operation_struct,
 };
 
-define_operation_struct!(MultipartInitOperation, MultipartInitConfig);
+define_operation_struct!(MultipartInitOperation);
 
-#[derive(Builder)]
-pub struct MultipartInitConfig {
-    /// Required
-    ///
-    /// 上传云端后的文件名
-    #[validator(is_key_name_not_empty)]
-    #[into]
-    #[public]
-    key_name: String,
+define_api_request!(
+    MultipartInitRequest,
+    MultipartInitOperationBuilder,
+    InitMultipartState,
+    {
+    /// Required: Key name
+    #[builder(setter(into))]
+    pub key_name: String,
 
-    /// Required
-    ///
-    /// 上传对象的mimeType
-    #[validator(is_mime_type_valid)]
-    #[into]
-    #[public]
-    mime_type: String,
+    /// Required: Content type
+    #[builder(setter(into))]
+    pub mime_type: String,
 
-    /// Required
-    ///
-    /// 要上传的目标Bucket
-    #[validator(is_bucket_name_not_empty)]
-    #[into]
-    #[public]
-    bucket_name: String,
+    /// Required: Bucket name
+    #[builder(setter(into))]
+    pub bucket_name: String,
 
-    /// 用户自定义文件元数据
-    #[default(None)]
-    #[public]
-    metadata: Option<HashMap<String, String>>,
+    /// Optional: Metadata
+    #[builder(setter(into, strip_option), default)]
+    pub metadata: ::std::option::Option<::std::collections::HashMap<String, String>>,
 
-    /// 文件存储类型，分别是标准、低频、冷存，对应有效值：STANDARD | IA | ARCHIVE
-    #[default(None)]
-    #[public]
-    storage_type: Option<String>,
+    /// Optional: Storage type
+    #[builder(setter(into, strip_option), default)]
+    pub storage_type: ::std::option::Option<String>,
 
-    /// 安全令牌（STS临时凭证）
-    #[default(None)]
-    #[public]
-    security_token: Option<String>,
-}
+    /// Optional: Security token
+    #[builder(setter(into, strip_option), default)]
+    pub security_token: ::std::option::Option<String>,
+    }
+);
 
 #[async_trait::async_trait]
 impl ApiOperation for MultipartInitOperation {
+    type Request = MultipartInitRequest;
     type Response = InitMultipartState;
     type Error = Error;
 
-    async fn execute(&self) -> Result<Self::Response, Self::Error> {
-        let config = &self.config;
+    async fn execute(&self, request: Self::Request) -> Result<Self::Response, Self::Error> {
+        let MultipartInitRequest {
+            key_name,
+            mime_type,
+            bucket_name,
+            metadata,
+            storage_type,
+            security_token,
+            ..
+        } = request;
         let date = Local::now().format("&Y%m%d%H%M%S").to_string();
-        let auth_object = ObjectOptAuthParam::new()
+        let auth_object = ObjectOptAuthParamBuilder::default()
             .method(Method::POST)
-            .bucket(config.bucket_name.clone())
-            .key_name(config.key_name.clone())
-            .content_type(Some(config.mime_type.clone()))
-            .date(Some(date.clone()))
-            .build();
-        let authorization = self
-            .auth_service
-            .authorization(&auth_object, self.object_config.clone())?;
+            .bucket(bucket_name.as_str())
+            .key_name(key_name.as_str())
+            .content_type(mime_type.as_str())
+            .date(date.as_str())
+            .build()?;
+        let authorization =
+            AuthorizationService.authorization(auth_object, self.object_config.clone())?;
         let mut headers = HeaderMap::new();
-        headers.insert("Content-Type", config.mime_type.parse().unwrap());
+        headers.insert("Content-Type", mime_type.parse().unwrap());
         headers.insert("Accept", "*/*".parse().unwrap());
         headers.insert("Date", date.parse().unwrap());
         headers.insert("Authorization", authorization.parse().unwrap());
-        if let Some(ref storage_type) = config.storage_type
+        if let Some(ref storage_type) = storage_type
             && !storage_type.is_empty()
         {
             headers.insert("X-Ufile-Storage-Class", storage_type.parse().unwrap());
         }
-        if let Some(ref security_token) = config.security_token
+        if let Some(ref security_token) = security_token
             && !security_token.is_empty()
         {
             headers.insert("SecurityToken", security_token.parse().unwrap());
         }
         // We must add metadata to headers if metadata is not empty.
-        if let Some(ref metadata) = config.metadata
+        if let Some(ref metadata) = metadata
             && !metadata.is_empty()
         {
             for (k, v) in metadata {
@@ -106,7 +98,7 @@ impl ApiOperation for MultipartInitOperation {
         }
         let url = self
             .object_config
-            .generate_final_host(config.bucket_name.as_str(), config.key_name.as_str());
+            .generate_final_host(bucket_name.as_str(), key_name.as_str());
         let url = format!("{url}?uploads");
         // do request to remote server to create initialization of the multipart upload task.
         let resp = self
@@ -120,7 +112,7 @@ impl ApiOperation for MultipartInitOperation {
         ::tracing::debug!("Init multipart file response: {:?}", resp);
         if resp.status().is_success() {
             let mut resp: InitMultipartState = resp.json().await?;
-            resp.mime_type.replace(config.mime_type.clone());
+            resp.mime_type.replace(mime_type.clone());
             return Ok(resp);
         }
         Err(Error::msg("Failed to init multipart file"))
