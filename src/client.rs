@@ -13,15 +13,13 @@ use reqwest::{Body, Client, ClientBuilder, Method, Proxy, Url, header::HeaderMap
 
 #[derive(Clone)]
 pub struct S3Client {
-    object_config: ObjectConfig,
     http_client: HttpClient,
     auth_service: AuthorizationService,
 }
 
 impl S3Client {
-    pub fn new(object_config: ObjectConfig) -> Self {
+    pub fn new() -> Self {
         Self {
-            object_config,
             http_client: HttpClientBuilder::default().build().unwrap(),
             auth_service: AuthorizationService,
         }
@@ -37,10 +35,6 @@ impl S3Client {
         self
     }
 
-    pub fn object_config(&self) -> ObjectConfig {
-        self.object_config.clone()
-    }
-
     pub fn http_client(&self) -> HttpClient {
         self.http_client.clone()
     }
@@ -51,44 +45,44 @@ impl S3Client {
 
     /// Put object request builder.
     #[must_use]
-    pub fn put_object(&self) -> PutFileRequestBuilder {
+    pub fn put_object(&self, object_config: ObjectConfig) -> PutFileRequestBuilder {
         PutFileRequestBuilder::default()
-            .object_config(self.object_config())
+            .object_config(object_config)
             .client(self.http_client())
     }
 
     /// Init multipart upload request builder.
-    pub fn multipart_init(&self) -> MultipartInitRequestBuilder {
+    pub fn multipart_init(&self, object_config: ObjectConfig) -> MultipartInitRequestBuilder {
         MultipartInitRequestBuilder::default()
-            .object_config(self.object_config())
+            .object_config(object_config)
             .client(self.http_client())
     }
 
     /// Upload multipart file slice request builder.
-    pub fn multipart_upload(&self) -> MultipartFileRequestBuilder {
+    pub fn multipart_upload(&self, object_config: ObjectConfig) -> MultipartFileRequestBuilder {
         MultipartFileRequestBuilder::default()
-            .object_config(self.object_config())
+            .object_config(object_config)
             .client(self.http_client())
     }
 
     /// Finish multipart upload request builder.
-    pub fn multipart_finish(&self) -> MultipartFinishRequestBuilder {
+    pub fn multipart_finish(&self, object_config: ObjectConfig) -> MultipartFinishRequestBuilder {
         MultipartFinishRequestBuilder::default()
-            .object_config(self.object_config())
+            .object_config(object_config)
             .client(self.http_client())
     }
 
     /// Abort multipart upload request builder.
-    pub fn multipart_abort(&self) -> MultipartAbortRequestBuilder {
+    pub fn multipart_abort(&self, object_config: ObjectConfig) -> MultipartAbortRequestBuilder {
         MultipartAbortRequestBuilder::default()
-            .object_config(self.object_config())
+            .object_config(object_config)
             .client(self.http_client())
     }
 
     /// Get file heads request builder.
-    pub fn head_object(&self) -> HeadFileRequestBuilder {
+    pub fn head_object(&self, object_config: ObjectConfig) -> HeadFileRequestBuilder {
         HeadFileRequestBuilder::default()
-            .object_config(self.object_config())
+            .object_config(object_config)
             .client(self.http_client())
     }
 

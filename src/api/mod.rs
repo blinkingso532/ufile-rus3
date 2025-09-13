@@ -14,7 +14,7 @@ mod util;
 mod validator;
 
 /// Re-export util module
-pub use util::{GenPrivateUrlOperation, GenPrivateUrlRequest, GenPrivateUrlRequestBuilder};
+pub use util::*;
 
 /// Re-export Sealed trait
 pub(crate) use traits::sealed::Sealed;

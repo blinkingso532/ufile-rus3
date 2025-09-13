@@ -8,6 +8,55 @@ use reqwest::Method;
 
 use crate::api::{ApiOperation, ObjectConfig, Sealed};
 
+#[derive(Builder)]
+pub struct GenPublicUrlRequest {
+    /// Requried: Bucket name.
+    #[builder(setter(into))]
+    pub bucket_name: String,
+
+    /// Required: Object name.
+    #[builder(setter(into))]
+    pub key_name: String,
+
+    /// Optional: IOP command for image operations.
+    #[builder(setter(into, strip_option), default)]
+    pub iop_cmd: Option<String>,
+}
+pub struct GenPublicUrlOperation {
+    object_config: ObjectConfig,
+}
+
+impl GenPublicUrlOperation {
+    pub fn new(object_config: ObjectConfig) -> Self {
+        Self { object_config }
+    }
+}
+
+impl Sealed for GenPublicUrlOperation {}
+
+#[async_trait::async_trait]
+impl ApiOperation for GenPublicUrlOperation {
+    type Request = GenPublicUrlRequest;
+    type Response = String;
+    type Error = Error;
+
+    async fn execute(&self, req: Self::Request) -> Result<String, Error> {
+        let GenPublicUrlRequest {
+            bucket_name,
+            key_name,
+            iop_cmd,
+        } = req;
+        let url = self
+            .object_config
+            .generate_final_host(bucket_name.as_str(), key_name.as_str());
+        let mut url = format!("{}{}", url, key_name);
+        if let Some(ref iop_cmd) = iop_cmd {
+            url = format!("{}/{}", url, iop_cmd);
+        }
+        Ok(url)
+    }
+}
+
 /// Request for generating private URL which will be expired in `expires` seconds.
 #[derive(Builder)]
 pub struct GenPrivateUrlRequest {
