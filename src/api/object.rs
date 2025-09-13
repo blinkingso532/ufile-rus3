@@ -87,7 +87,7 @@ pub struct ObjectConfig {
     pub region: String,
     /// 代理后缀 (eg: 'ufileos.com')
     #[serde(rename = "ProxySuffix")]
-    #[builder(setter(into, strip_option), default)]
+    #[builder(setter(into, strip_option), default = Some("ufileos.com".to_string()))]
     pub proxy_suffix: Option<String>,
 
     /// 自定义域名 (eg: 'api.ucloud.cn')：若配置了非空自定义域名，则使用自定义域名，不会使用 region + proxySuffix 拼接

@@ -46,12 +46,12 @@ impl ApiOperation for GenPublicUrlOperation {
             key_name,
             iop_cmd,
         } = req;
-        let url = self
+        let mut url = self
             .object_config
             .generate_final_host(bucket_name.as_str(), key_name.as_str());
-        let mut url = format!("{}{}", url, key_name);
         if let Some(ref iop_cmd) = iop_cmd {
-            url = format!("{}/{}", url, iop_cmd);
+            url.push_str("?iopcmd=");
+            url.push_str(iop_cmd);
         }
         Ok(url)
     }
