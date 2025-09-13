@@ -117,32 +117,44 @@ impl ApiOperation for GenPrivateUrlOperation {
             security_token,
             iop_cmd,
         } = req;
+        // calculate expire time since epoch time: (now - 1970-01-01 00:00:00) + expires
+        let expire_time =
+            (expires + SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()).to_string();
+
         let signature = self.object_config.authorization_private_url(
             Method::GET,
             bucket_name.as_str(),
             key_name.as_str(),
-            expires,
+            expire_time.as_str(),
         )?;
-        // calculate expire time since epoch time: (now - 1970-01-01 00:00:00) + expires
-        let expire_time = expires + SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+
         let url = self
             .object_config
             .generate_final_host(bucket_name.as_str(), key_name.as_str());
         let mut url = format!(
             "{}?UCloudPublicKey={}&Signature={}&Expires={}",
-            url, self.object_config.public_key, signature, expire_time
+            url,
+            urlencoding::encode(self.object_config.public_key.as_str()),
+            urlencoding::encode(signature.as_str()),
+            urlencoding::encode(expire_time.as_str()),
         );
         // add attachment filename param if needed.
         if let Some(ref attachment_filename) = attachment_filename {
-            url = format!("{url}&ufileattname={attachment_filename}");
+            url = format!(
+                "{url}&ufileattname={}",
+                urlencoding::encode(attachment_filename.as_str())
+            );
         }
         // add security token param if needed.
         if let Some(ref security_token) = security_token {
-            url = format!("{url}&SecurityToken={security_token}");
+            url = format!(
+                "{url}&SecurityToken={}",
+                urlencoding::encode(security_token.as_str())
+            );
         }
         // add iop-cmd as query params if needed.
         if let Some(ref iop_cmd) = iop_cmd {
-            url = format!("{url}&iopcmd={iop_cmd}");
+            url = format!("{url}&iopcmd={}", urlencoding::encode(iop_cmd.as_str()));
         }
         Ok(url)
     }

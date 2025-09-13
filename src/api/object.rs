@@ -120,7 +120,7 @@ impl ObjectConfig {
     pub fn generate_final_host(&self, bucket_name: &str, key_name: &str) -> String {
         let key_name = urlencoding::encode(key_name);
         if let Some(ref custom_hosts) = self.custom_host {
-            format!("{}/{}", custom_hosts, key_name.as_ref())
+            format!("{}/{}", custom_hosts, key_name)
         } else {
             let bucket_name = urlencoding::encode(bucket_name);
             let region = urlencoding::encode(&self.region);
@@ -154,7 +154,7 @@ impl ObjectConfig {
         method: Method,
         bucket_name: &str,
         key_name: &str,
-        expires: u64,
+        expires: &str,
     ) -> Result<String, Error> {
         if bucket_name.is_empty() {
             return Err(Error::msg("bucket must not be empty."));
@@ -164,14 +164,19 @@ impl ObjectConfig {
             return Err(Error::msg("key_name must not be empty."));
         }
 
-        let method = method.to_string();
-        if expires == 0 {
+        if expires.parse::<u64>()? == 0 {
             return Err(Error::msg("expires must not be zero."));
         }
         let sign_data = format!(
-            "{}\n{}\n{}\n{}\n/{}\n/{}",
-            method, "", "", expires, bucket_name, key_name
+            "{}\n{}\n{}\n{}\n/{}/{}",
+            method.as_str(),
+            "",
+            "",
+            expires,
+            bucket_name,
+            key_name
         );
+        tracing::debug!("sign_data: \n{}", sign_data);
         // we should calculate signature here.
         HmacSha1Signer.signature(&self.private_key, &sign_data)
     }

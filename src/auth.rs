@@ -28,6 +28,18 @@ impl Signer for HmacSha1Signer {
     }
 }
 
+#[test]
+fn test_signature() {
+    let signer = HmacSha1Signer;
+    let signature = signer.signature("46e8d7f3-3319-4b69-bfa3-86c00dd9c978", "GET
+
+
+1757756531
+/guilaixi/user_event/9cb9563021f75fd648c3fe905bce9a1898cb147b8a3bfedac9d8845c190e7edb").unwrap();
+    println!("{signature}");
+    println!("{}", urlencoding::encode("wmX3jd16tkEzZSzggqZLNIwcjRs="));
+}
+
 // 授权服务
 #[derive(Debug, Clone, Copy)]
 pub struct AuthorizationService;
